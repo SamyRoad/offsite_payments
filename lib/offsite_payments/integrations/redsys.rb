@@ -157,6 +157,8 @@ module OffsitePayments
       end
 
       class Helper < OffsitePayments::Helper
+        include ActiveMerchant::PostsData
+
         class << self
           # Credentials should be set as a hash containing the fields:
           #  :terminal_id, :commercial_id, :secret_key, :key_type (optional)
@@ -304,6 +306,8 @@ module OffsitePayments
 
       # Parser and handler for incoming Automatic Payment Confirmations from Nochex.
       class Notification < OffsitePayments::Notification
+        include ActiveMerchant::PostsData
+
         def complete?
           status == 'Completed'
         end
