@@ -5,99 +5,13 @@ module OffsitePayments
     module Redsys
       mattr_accessor :service_test_url
       self.service_test_url = "https://sis-t.sermepa.es:25443/sis/realizarPago"
-
       mattr_accessor :service_production_url
       self.service_production_url = "https://sis.sermepa.es/sis/realizarPago"
 
       mattr_accessor :operations_test_url
       self.operations_test_url = "https://sis-t.sermepa.es:25443/sis/operaciones"
-
       mattr_accessor :operations_production_url
       self.operations_production_url = "https://sis.sermepa.es/sis/operaciones"
-
-      def self.supported_currencies
-        [ 
-          ['EUR', '978'],
-          ['USD', '840'],
-          ['GBP', '826'],
-          ['JPY', '392']
-        ]
-      end
-
-      def self.supported_languages
-        [
-          [:xx, '000'],
-          [:es, '001'],
-          [:en, '002'],
-          [:ca, '003'],
-          [:fr, '004'],
-          [:de, '005'],
-          [:nl, '006'],
-          [:it, '007'],
-          [:sv, '008'],
-          [:pt, '009'],
-          [:pl, '011'],
-          [:gl, '012'],
-          [:eu, '013'],
-        ]
-      end
-
-      def self.supported_transactions
-        [
-          [:authorization,                      '0'],
-          [:preauthorization,                   '1'],
-          [:confirmation,                       '2'],
-          [:automatic_return,                   '3'],
-          [:reference_payment,                  '4'],
-          [:recurring_transaction,              '5'],
-          [:successive_transaction,             '6'],
-          [:authentication,                     '7'],
-          [:confirm_authentication,             '8'],
-          [:cancel_preauthorization,            '9'],
-          [:deferred_authorization,             'O'],
-          [:confirm_deferred_authorization,     'P'],
-          [:cancel_deferred_authorization,      'Q'],
-          [:inicial_recurring_authorization,    'R'],
-          [:successive_recurring_authorization, 'S']
-        ]
-      end
-
-      def self.response_code_message(code)
-        case code.to_i
-        when 0..99
-          nil
-        when 900
-          "Transacción autorizada para devoluciones y confirmaciones"
-        when 101
-          "Tarjeta caducada"
-        when 102
-          "Tarjeta en excepción transitoria o bajo sospecha de fraude"
-        when 104
-          "Operación no permitida para esa tarjeta o terminal"
-        when 116
-          "Disponible insuficiente"
-        when 118
-          "Tarjeta no registrada o Método de pago no disponible para su tarjeta"
-        when 129
-          "Código de seguridad (CVV2/CVC2) incorrecto"
-        when 180
-          "Tarjeta no válida o Tarjeta ajena al servicio o Error en la llamada al MPI sin controlar."
-        when 184
-          "Error en la autenticación del titular"
-        when 190
-          "Denegación sin especificar Motivo"
-        when 191
-          "Fecha de caducidad errónea"
-        when 202
-          "Tarjeta en excepción transitoria o bajo sospecha de fraude con retirada de tarjeta"
-        when 912,9912
-          "Emisor no disponible"
-        when 913
-          "Pedido repetido"
-        else
-          "Transacción denegada"
-        end
-      end
 
       def self.service_url 
         mode = OffsitePayments.mode
@@ -156,9 +70,94 @@ module OffsitePayments
         row.nil? ? supported_transactions.first[0] : row[0]
       end
 
-      class Helper < OffsitePayments::Helper
-        include ActiveMerchant::PostsData
+      def self.supported_currencies
+        [ 
+          ['EUR', '978'],
+          ['USD', '840'],
+          ['GBP', '826'],
+          ['JPY', '392']
+        ]
+      end
 
+      def self.supported_languages
+        [
+          [:xx, '000'],
+          [:es, '001'],
+          [:en, '002'],
+          [:ca, '003'],
+          [:fr, '004'],
+          [:de, '005'],
+          [:nl, '006'],
+          [:it, '007'],
+          [:sv, '008'],
+          [:pt, '009'],
+          [:pl, '011'],
+          [:gl, '012'],
+          [:eu, '013'],
+        ]
+      end
+
+      def self.supported_transactions
+        [
+          [:authorization,              '0'],
+          [:preauthorization,           '1'],
+          [:confirmation,               '2'],
+          [:automatic_return,           '3'],
+          [:reference_payment,          '4'],
+          [:recurring_transaction,      '5'],
+          [:successive_transaction,     '6'],
+          [:authentication,             '7'],
+          [:confirm_authentication,     '8'],
+          [:cancel_preauthorization,    '9'],
+          [:deferred_authorization,             'O'],
+          [:confirm_deferred_authorization,     'P'],
+          [:cancel_deferred_authorization,      'Q'],
+          [:inicial_recurring_authorization,    'R'],
+          [:successive_recurring_authorization, 'S']
+        ]
+      end
+
+      def self.response_code_message(code)
+        case code.to_i
+        when 0..99
+          nil
+        when 900
+          "Transacción autorizada para devoluciones y confirmaciones"
+        when 101
+          "Tarjeta caducada"
+        when 102
+          "Tarjeta en excepción transitoria o bajo sospecha de fraude"
+        when 104
+          "Operación no permitida para esa tarjeta o terminal"
+        when 116
+          "Disponible insuficiente"
+        when 118
+          "Tarjeta no registrada o Método de pago no disponible para su tarjeta"
+        when 129
+          "Código de seguridad (CVV2/CVC2) incorrecto"
+        when 180
+          "Tarjeta no válida o Tarjeta ajena al servicio o Error en la llamada al MPI sin controlar."
+        when 184
+          "Error en la autenticación del titular"
+        when 190
+          "Denegación sin especificar Motivo"
+        when 191
+          "Fecha de caducidad errónea"
+        when 202
+          "Tarjeta en excepción transitoria o bajo sospecha de fraude con retirada de tarjeta"
+        when 912,9912
+          "Emisor no disponible"
+        when 913
+          "Pedido repetido"
+        else
+          "Transacción denegada"
+        end
+      end
+
+      class Return < OffsitePayments::Return
+      end
+
+      class Helper < OffsitePayments::Helper
         class << self
           # Credentials should be set as a hash containing the fields:
           #  :terminal_id, :commercial_id, :secret_key, :key_type (optional)
@@ -188,12 +187,14 @@ module OffsitePayments
         mapping :frequency,   'Ds_Merchant_DateFrecuency'
         mapping :expiry_date, 'Ds_Merchant_ChargeExpiryDate'
 
+        #### Special Request Specific Fields ####
         mapping :signature,   'Ds_Merchant_MerchantSignature'
+        ########
 
         # ammount should always be provided in cents!
         def initialize(order, account, options = {})
           self.credentials = options.delete(:credentials) if options[:credentials]
-          super
+          super(order, account, options)
 
           add_field 'Ds_Merchant_MerchantCode', credentials[:commercial_id]
           add_field 'Ds_Merchant_Terminal', credentials[:terminal_id]
@@ -243,6 +244,7 @@ module OffsitePayments
           add_field mappings[:signature], sign_request
           @fields
         end
+
 
         # Send a manual request for the currently prepared transaction.
         # This is an alternative to the normal view helper and is useful
@@ -302,12 +304,10 @@ module OffsitePayments
 
           Digest::SHA1.hexdigest(str)
         end
+
       end
 
-      # Parser and handler for incoming Automatic Payment Confirmations from Nochex.
       class Notification < OffsitePayments::Notification
-        include ActiveMerchant::PostsData
-
         def complete?
           status == 'Completed'
         end
@@ -344,9 +344,12 @@ module OffsitePayments
           Redsys.currency_from_code(params['ds_currency'])
         end
 
+        # Status of transaction. List of possible values:
+        # <tt>Completed</tt>
+        # <tt>Failed</tt>
+        # <tt>Pending</tt>
         def status
           return 'Failed' if error_code
-
           case response.to_i
           when 0..99
             'Completed'
@@ -374,6 +377,26 @@ module OffsitePayments
           params['ds_securepayment'] == '1'
         end
 
+        # Acknowledge the transaction.
+        #
+        # Validate the details provided by the gateway by ensuring that the signature
+        # matches up with the details provided.
+        #
+        # Optionally, a set of credentials can be provided that should contain a
+        # :secret_key instead of using the global credentials defined in the Redsys::Helper.
+        #
+        # Example:
+        #
+        #   def notify
+        #     notify = Redsys::Notification.new(request.query_parameters)
+        #
+        #     if notify.acknowledge
+        #       ... process order ... if notify.complete?
+        #     else
+        #       ... log possible hacking attempt ...
+        #     end
+        #
+        #
         def acknowledge(credentials = nil)
           return false if params['ds_signature'].blank?
           str =
@@ -422,7 +445,6 @@ module OffsitePayments
         def xml_response_to_hash(xml)
           result = { }
           doc = Nokogiri::XML(xml)
-
           result['code'] = doc.css('RETORNOXML CODIGO').inner_text
           if result['code'] == '0'
             doc.css('RETORNOXML OPERACION').children.each do |child|
@@ -435,11 +457,9 @@ module OffsitePayments
             end
           end
           result
-        end 
+        end
       end
 
-      class Return < OffsitePayments::Return
-      end
     end
   end
 end
