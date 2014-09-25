@@ -100,7 +100,7 @@ module OffsitePayments
       end
 
       def self.service_url 
-        mode = ActiveMerchant::Billing::Base.integration_mode
+        mode = OffsitePayments.mode
         case mode
         when :production
           self.service_production_url
@@ -112,7 +112,7 @@ module OffsitePayments
       end
 
       def self.operations_url
-        mode = ActiveMerchant::Billing::Base.integration_mode
+        mode = OffsitePayments.mode
         case mode
         when :production
           self.operations_production_url
@@ -157,8 +157,6 @@ module OffsitePayments
       end
 
       class Helper < OffsitePayments::Helper
-        include ActiveMerchant::PostsData
-
         class << self
           # Credentials should be set as a hash containing the fields:
           #  :terminal_id, :commercial_id, :secret_key, :key_type (optional)
@@ -306,8 +304,6 @@ module OffsitePayments
 
       # Parser and handler for incoming Automatic Payment Confirmations from Nochex.
       class Notification < OffsitePayments::Notification
-        include ActiveMerchant::PostsData
-
         def complete?
           status == 'Completed'
         end
