@@ -1,4 +1,7 @@
 require 'nokogiri'
+require 'base64'
+require 'openssl'
+require 'json'
 
 module OffsitePayments
   module Integrations
@@ -194,6 +197,7 @@ module OffsitePayments
         # ammount should always be provided in cents!
         def initialize(order, account, options = {})
           self.credentials = options.delete(:credentials) if options[:credentials]
+          self.credentials[:key_type] ||= 'sha1_extended'
           super(order, account, options)
 
           add_field 'Ds_Merchant_MerchantCode', credentials[:commercial_id]
@@ -241,8 +245,16 @@ module OffsitePayments
         end
 
         def form_fields
-          add_field mappings[:signature], sign_request
-          @fields
+          if credentials[:key_type] == 'sha1_extended'
+            add_field mappings[:signature], sign_request
+            @fields
+
+          elsif credentials[:key_type] == 'sha256'
+            add_field mappings[:signature], sign_request
+            add_field 'Ds_SignatureVersion', 'HMAC_SHA256_V1'
+            add_field 'Ds_MerchantParameters', Base64.encode64(merchant_params_json)
+            @fields
+          end
         end
 
 
@@ -285,24 +297,66 @@ module OffsitePayments
         # Values included in the signature are determined by the the type of
         # transaction.
         def sign_request
-          str = @fields['Ds_Merchant_Amount'].to_s +
-            @fields['Ds_Merchant_Order'].to_s +
-            @fields['Ds_Merchant_MerchantCode'].to_s +
-            @fields['Ds_Merchant_Currency'].to_s
+          if credentials[:key_type] == 'sha1_extended'
+            str = @fields['Ds_Merchant_Amount'].to_s +
+              @fields['Ds_Merchant_Order'].to_s +
+              @fields['Ds_Merchant_MerchantCode'].to_s +
+              @fields['Ds_Merchant_Currency'].to_s
 
-          case Redsys.transaction_from_code(@fields['Ds_Merchant_TransactionType'])
-          when :recurring_transaction
-            str += @fields['Ds_Merchant_SumTotal']
-          end
+            case Redsys.transaction_from_code(@fields['Ds_Merchant_TransactionType'])
+            when :recurring_transaction
+              str += @fields['Ds_Merchant_SumTotal']
+            end
 
-          if credentials[:key_type].blank? || credentials[:key_type] == 'sha1_extended'
             str += @fields['Ds_Merchant_TransactionType'].to_s +
               @fields['Ds_Merchant_MerchantURL'].to_s # may be blank!
+
+            str += credentials[:secret_key]
+
+            Digest::SHA1.hexdigest(str)
+
+          elsif credentials[:key_type] == 'sha256'
+
+            encoded_merchant_params = Base64.encode64(merchant_params_json)
+            key = encrypt_3des(@fields['Ds_Merchant_Order'])
+
+            hmac256(key, encoded_merchant_params)
           end
+        end
 
-          str += credentials[:secret_key]
+        def merchant_params_json
+          JSON.generate({
+            "DS_MERCHANT_AMOUNT"          => @fields['Ds_Merchant_Amount'],
+            "DS_MERCHANT_ORDER"           => @fields['Ds_Merchant_Order'],
+            "DS_MERCHANT_MERCHANTCODE"    => @fields['Ds_Merchant_MerchantCode'],
+            "DS_MERCHANT_CURRENCY"        => @fields['Ds_Merchant_Currency'],
+            "DS_MERCHANT_TRANSACTIONTYPE" => @fields['Ds_Merchant_TransactionType'],
+            "DS_MERCHANT_TERMINAL"        => @fields['Ds_Merchant_Terminal'],
+            "DS_MERCHANT_MERCHANTURL"     => @fields['Ds_Merchant_MerchantURL'],
+            "DS_MERCHANT_URLOK"           => @fields['Ds_Merchant_UrlOK'],
+            "DS_MERCHANT_URLKO"           => @fields['Ds_Merchant_UrlKO'] })
+        end
 
-          Digest::SHA1.hexdigest(str)
+        def encrypt_3des(message)
+          data = message.dup
+          block_length = 8
+
+          cipher = OpenSSL::Cipher::Cipher.new('des-ede3-cbc')
+          cipher.encrypt
+          cipher.padding = 0
+          cipher.key Base64.decode64 credentials[:secret_key]
+
+          # padding message
+          data += "\0" until data.bytesize % block_length == 0
+
+          out = cipher.update(message) + cipher.final
+          Base64.encode64(out).chop
+        end
+
+        def hmac256(key, message)
+          digest = OpenSSL::Digest::SHA256.new
+          out = OpenSSL::HMAC.digest(digest, key, message)
+          Base64.encode64(out).chop
         end
 
       end
