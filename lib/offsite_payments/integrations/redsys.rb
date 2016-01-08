@@ -6,6 +6,29 @@ require 'json'
 module OffsitePayments
   module Integrations
     module Redsys
+      module SHA256Helper
+        def encrypt_3des(key, message)
+          data = message.dup
+          block_length = 8
+
+          cipher = OpenSSL::Cipher::Cipher.new('des-ede3-cbc')
+          cipher.encrypt
+          cipher.padding = 0
+          cipher.key = Base64.decode64 key
+
+          # padding message
+          data += "\0" until data.bytesize % block_length == 0
+
+          cipher.update(data) + cipher.final
+        end
+
+        def hmac256(key, message)
+          digest = OpenSSL::Digest::SHA256.new
+          out = OpenSSL::HMAC.digest(digest, key, message)
+          Base64.strict_encode64(out)
+        end
+      end
+
       mattr_accessor :service_test_url
       self.service_test_url = "https://sis-t.redsys.es:25443/sis/realizarPago"
       mattr_accessor :service_production_url
@@ -250,10 +273,11 @@ module OffsitePayments
             @fields
 
           elsif credentials[:key_type] == 'sha256'
-            add_field mappings[:signature], sign_request
-            add_field 'Ds_SignatureVersion', 'HMAC_SHA256_V1'
-            add_field 'Ds_MerchantParameters', Base64.encode64(merchant_params_json)
-            @fields
+            {
+              "Ds_SignatureVersion"   => "HMAC_SHA256_V1",
+              "Ds_MerchantParameters" => Base64.strict_encode64(merchant_params_json),
+              "Ds_Signature"          => sign_request
+            }
           end
         end
 
@@ -317,10 +341,10 @@ module OffsitePayments
 
           elsif credentials[:key_type] == 'sha256'
 
-            encoded_merchant_params = Base64.encode64(merchant_params_json)
-            key = encrypt_3des(@fields['Ds_Merchant_Order'])
+            encoded_merchant_params = Base64.strict_encode64(merchant_params_json)
+            key = SHA256Helper.encrypt_3des(credentials[:secret_key], @fields['Ds_Merchant_Order'])
 
-            hmac256(key, encoded_merchant_params)
+            SHA256Helper.hmac256(key, encoded_merchant_params)
           end
         end
 
@@ -335,28 +359,6 @@ module OffsitePayments
             "DS_MERCHANT_MERCHANTURL"     => @fields['Ds_Merchant_MerchantURL'],
             "DS_MERCHANT_URLOK"           => @fields['Ds_Merchant_UrlOK'],
             "DS_MERCHANT_URLKO"           => @fields['Ds_Merchant_UrlKO'] })
-        end
-
-        def encrypt_3des(message)
-          data = message.dup
-          block_length = 8
-
-          cipher = OpenSSL::Cipher::Cipher.new('des-ede3-cbc')
-          cipher.encrypt
-          cipher.padding = 0
-          cipher.key Base64.decode64 credentials[:secret_key]
-
-          # padding message
-          data += "\0" until data.bytesize % block_length == 0
-
-          out = cipher.update(message) + cipher.final
-          Base64.encode64(out).chop
-        end
-
-        def hmac256(key, message)
-          digest = OpenSSL::Digest::SHA256.new
-          out = OpenSSL::HMAC.digest(digest, key, message)
-          Base64.encode64(out).chop
         end
 
       end
@@ -453,19 +455,29 @@ module OffsitePayments
         #
         def acknowledge(credentials = nil)
           return false if params['ds_signature'].blank?
-          str =
-            params['ds_amount'].to_s +
-            params['ds_order'].to_s +
-            params['ds_merchantcode'].to_s +
-            params['ds_currency'].to_s +
-            params['ds_response'].to_s
-          if xml?
-            str += params['ds_transactiontype'].to_s + params['ds_securepayment'].to_s
-          end
 
-          str += (credentials || Redsys::Helper.credentials)[:secret_key]
-          sig = Digest::SHA1.hexdigest(str)
-          sig.upcase == params['ds_signature'].to_s.upcase
+          if params['ds_signatureversion'].blank? || params['ds_signatureversion'] == 'sha1_extended'
+            str =
+              params['ds_amount'].to_s +
+              params['ds_order'].to_s +
+              params['ds_merchantcode'].to_s +
+              params['ds_currency'].to_s +
+              params['ds_response'].to_s
+            if xml?
+              str += params['ds_transactiontype'].to_s + params['ds_securepayment'].to_s
+            end
+
+            str += (credentials || Redsys::Helper.credentials)[:secret_key]
+            sig = Digest::SHA1.hexdigest(str)
+            sig.upcase == params['ds_signature'].to_s.upcase
+
+          elsif params['ds_signatureversion'].upcase == 'HMAC_SHA256_V1'
+
+            key = SHA256Helper.encrypt_3des(credentials[:secret_key], params['ds_order'])
+            verification = SHA256Helper.hmac256(key, params['merchant_params_string'])
+
+            verification.upcase == params['ds_signature'].to_s.upcase
+          end
         end
 
         private
@@ -483,6 +495,12 @@ module OffsitePayments
           if post.is_a?(Hash)
             @raw = post.inspect.to_s
             post.each { |key, value|  params[key.downcase] = value }
+
+            if post.include?("Ds_MerchantParameters")
+              params['merchant_params_string'] = Base64.decode64(post['Ds_MerchantParameters'])
+              decoded_params = JSON.parse(params['merchant_params_string'])
+              decoded_params.each { |key, value| params[key.downcase] = value }
+            end
           elsif post.to_s =~ /<retornoxml>/i
             # XML source
             @raw = post.to_s
