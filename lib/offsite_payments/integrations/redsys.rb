@@ -7,7 +7,7 @@ module OffsitePayments
   module Integrations
     module Redsys
       module SHA256Helper
-        def encrypt_3des(key, message)
+        def self.encrypt_3des(key, message)
           data = message.dup
           block_length = 8
 
@@ -22,7 +22,7 @@ module OffsitePayments
           cipher.update(data) + cipher.final
         end
 
-        def hmac256(key, message)
+        def self.hmac256(key, message)
           digest = OpenSSL::Digest::SHA256.new
           out = OpenSSL::HMAC.digest(digest, key, message)
           Base64.strict_encode64(out)
@@ -474,7 +474,7 @@ module OffsitePayments
           elsif params['ds_signatureversion'].upcase == 'HMAC_SHA256_V1'
 
             key = SHA256Helper.encrypt_3des(credentials[:secret_key], params['ds_order'])
-            verification = SHA256Helper.hmac256(key, params['merchant_params_string'])
+            verification = SHA256Helper.hmac256(key, params['ds_merchantparameters']).tr('+/', '-_')
 
             verification.upcase == params['ds_signature'].to_s.upcase
           end
@@ -497,9 +497,8 @@ module OffsitePayments
             post.each { |key, value|  params[key.downcase] = value }
 
             if post.include?("Ds_MerchantParameters")
-              params['merchant_params_string'] = Base64.decode64(post['Ds_MerchantParameters'])
-              decoded_params = JSON.parse(params['merchant_params_string'])
-              decoded_params.each { |key, value| params[key.downcase] = value }
+              data = JSON.parse(Base64.decode64(post['Ds_MerchantParameters'].tr('-_', '+/')))
+              data.each { |key, value| params[key.downcase] = value }
             end
           elsif post.to_s =~ /<retornoxml>/i
             # XML source
