@@ -2,13 +2,13 @@ module OffsitePayments #:nodoc:
   module Integrations #:nodoc:
     module Coinbase
       mattr_accessor :service_url
-      self.service_url = 'https://coinbase.com/checkouts/redirect'
+      self.service_url = 'https://www.coinbase.com/checkouts/redirect'
 
       mattr_accessor :buttoncreate_url
-      self.buttoncreate_url = 'https://coinbase.com/api/v1/buttons'
+      self.buttoncreate_url = 'https://api.coinbase.com/v1/buttons'
 
       mattr_accessor :notification_confirmation_url
-      self.notification_confirmation_url = 'https://coinbase.com/api/v1/orders/%s'
+      self.notification_confirmation_url = 'https://api.coinbase.com/v1/orders/%s'
 
       # options should be { credential1: "your API key", credential2: "your API secret" }
       def self.notification(post, options = {})
@@ -28,6 +28,8 @@ module OffsitePayments #:nodoc:
           @order = order_id
           @account = account
           @options = options
+          @options[:credential1] ||= ''
+          @options[:credential2] ||= ''
         end
 
         mapping :notify_url, 'notify_url'
@@ -79,7 +81,11 @@ module OffsitePayments #:nodoc:
         end
 
         def gross
-          "%.2f" % (params['total_native']['cents'].to_f / 100)
+          if params['total_original'].present?
+            "%.2f" % (params['total_original']['cents'].to_f / 100)
+          else
+            "%.2f" % (params['total_native']['cents'].to_f / 100)
+          end
         end
 
         def currency
@@ -99,7 +105,6 @@ module OffsitePayments #:nodoc:
         # apc arrives. Coinbase will verify that all the information we received are correct
         # and will return a ok or a fail.
         def acknowledge(authcode = {})
-
           uri = URI.parse(Coinbase.notification_confirmation_url % transaction_id)
 
           response = Coinbase.do_request(uri, @options[:credential1], @options[:credential2])
@@ -108,6 +113,7 @@ module OffsitePayments #:nodoc:
           posted_order = @params
           parse(response)
 
+          return false unless @params
           %w(id custom total_native status).all? { |param| posted_order[param] == @params[param] }
         end
 
@@ -116,6 +122,8 @@ module OffsitePayments #:nodoc:
         def parse(post)
           @raw = post.to_s
           @params = JSON.parse(post)['order']
+        rescue JSON::ParserError
+          @params = {}
         end
       end
 
